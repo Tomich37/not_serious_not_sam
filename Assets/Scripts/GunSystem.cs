@@ -1,6 +1,5 @@
-// https://www.youtube.com/watch?v=bqNW08Tac0Y
-
 using UnityEngine;
+using TMPro;
 
 public class GunSystem : MonoBehaviour
 {
@@ -9,12 +8,14 @@ public class GunSystem : MonoBehaviour
     public int damage = 100;
     public uint magazineSize = 30;
     public uint bulletsPerShot = 1;
+    public uint bulletsPerTap = 1;
 
     // Floats
     public float shootingDelay = 0.1f;
     public float spread = 0.1f;
     public float range = 100f;
     public float reloadTimeout = 1f;
+    public float timeBetweenShots = 0.1f;
 
     // Bools
     public bool holdAllowed = true;
@@ -22,6 +23,7 @@ public class GunSystem : MonoBehaviour
     // Private
     // Unsigned integers
     private uint m_remainedBullets = 0;
+    private uint bulletsShot = 0;
 
     // Bools
     private bool m_shooting = false;
@@ -35,6 +37,12 @@ public class GunSystem : MonoBehaviour
     public Transform attackPoint;
     public RaycastHit rcHit;
     public LayerMask whatHited;
+
+    // Visual and UI
+    public GameObject muzzleFlash, bulletHoleGraphic;
+    public CamShake camShake;
+    public float camShakeMagnitude = 0.1f, camShakeDuration = 0.05f;
+    public TextMeshProUGUI ammoText;
 
     // Methods
     public void PressTrigger()
@@ -50,11 +58,7 @@ public class GunSystem : MonoBehaviour
 
     public void Reload()
     {
-        if (m_reloading)
-        {
-            return;
-        }
-        if (m_remainedBullets < magazineSize)
+        if (m_reloading || m_remainedBullets == magazineSize)
         {
             return;
         }
@@ -76,11 +80,34 @@ public class GunSystem : MonoBehaviour
         float y = Random.Range(-spread, spread);
         Vector3 raycastDirection = fpsCamera.transform.forward + new Vector3(x, y, 0);
 
+        // Визуальные эффекты
+        Instantiate(muzzleFlash, attackPoint.position, Quaternion.identity);
+
         if (Physics.Raycast(fpsCamera.transform.position, raycastDirection, out RaycastHit hitInfo, range, whatHited))
         {
-            Debug.Log("Hited was: " + hitInfo);
+            Instantiate(bulletHoleGraphic, hitInfo.point, Quaternion.Euler(0, 180, 0));
+            Debug.Log("Hited was: " + hitInfo.collider.name);
 
-            // TODO: нанести дамагарова
+            // Нанесение урона
+            if (hitInfo.collider.CompareTag("Enemy"))
+            {
+                // Пример: нанесение урона объекту с тегом "Enemy"
+                hitInfo.collider.GetComponent<ShootingAi>().TakeDamage(damage);
+            }
+        }
+
+        // Тряска камеры
+        if (camShake != null)
+        {
+            StartCoroutine(camShake.Shake(camShakeDuration, camShakeMagnitude));
+        }
+
+        m_remainedBullets--;
+        bulletsShot--;
+
+        if (bulletsShot > 0 && m_remainedBullets > 0)
+        {
+            Invoke("Shoot", timeBetweenShots);
         }
     }
 
@@ -97,15 +124,15 @@ public class GunSystem : MonoBehaviour
 
         m_triggerJustPressed = false;
 
-        if (!m_readyToShot || m_shooting || m_reloading || m_remainedBullets < 1)
+        if (!m_readyToShot || !m_shooting || m_reloading || m_remainedBullets < 1)
         {
             return;
         }
 
         m_readyToShot = false;
-        m_remainedBullets--;
+        bulletsShot = bulletsPerTap;
 
-        // Выстреливаем все пули из выстрела (дробинки, например)
+        // Выстреливаем все пули из выстрела
         for (uint i = 0; i < bulletsPerShot; i++)
         {
             Shoot();
@@ -121,6 +148,25 @@ public class GunSystem : MonoBehaviour
 
     void Update()
     {
+        // Обработка нажатий
+        if (Input.GetKey(KeyCode.Mouse0))
+        {
+            PressTrigger();
+        }
+        else
+        {
+            ReleaseTrigger();
+        }
+
+        // Обновление состояния патронов в интерфейсе
+        ammoText.SetText(m_remainedBullets + " / " + magazineSize);
+
+        // Ручная перезарядка
+        if (Input.GetKeyDown(KeyCode.R) && m_remainedBullets < magazineSize && !m_reloading)
+        {
+            Reload();
+        }
+
         HandleTriggerPulled();
     }
 }
